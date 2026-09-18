@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="en" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Printix Merchant</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Supabase Production SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: { brand: { 500: '#4F46E5', 600: '#4338CA' } }, 
+                    animation: { 'spring-up': 'springUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards' },
+                    keyframes: { springUp: { '0%': { transform: 'translateY(40px)', opacity: '0' }, '100%': { transform: 'translateY(0)', opacity: '1' } } }
+                }
+            }
+        }
+    </script>
+    
+    <style>
+        body { background-color: #000; margin: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; -webkit-tap-highlight-color: transparent; }
+        ::-webkit-scrollbar { display: none; }
+        
+        .app-container { width: 100%; max-width: 420px; height: 100vh; max-height: 932px; background: #F8FAFC; position: relative; overflow: hidden; display: flex; flex-direction: column; transition: background-color 0.4s ease; }
+        .dark .app-container { background: #09090B; }
+        @media (min-width: 421px) { .app-container { height: 92vh; border-radius: 40px; border: 10px solid #222; box-shadow: 0 40px 80px rgba(0,0,0,0.5); } }
+
+        .tab-content { display: none; flex: 1; overflow-y: auto; flex-direction: column; padding-bottom: 120px; }
+        .tab-content.active { display: flex; animation: springUp 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+        
+        .glass-panel { background: rgba(255, 255, 255, 0.7); backdrop-filter: blur(24px); border: 1px solid rgba(255, 255, 255, 0.5); }
+        .dark .glass-panel { background: rgba(24, 24, 27, 0.7); border: 1px solid rgba(255, 255, 255, 0.1); }
+        .glass-header { background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(30px); border-bottom: 1px solid rgba(0,0,0,0.05); }
+        .dark .glass-header { background: rgba(9, 9, 11, 0.85); border-bottom: 1px solid rgba(255,255,255,0.05); }
+
+        .tactile:active { transform: scale(0.97); transition: transform 0.1s; }
+        
+        /* iOS Toggle Switch */
+        .ios-switch { appearance: none; width: 44px; height: 24px; background: #E2E8F0; border-radius: 24px; position: relative; cursor: pointer; outline: none; transition: background 0.3s; box-shadow: inset 0 1px 3px rgba(0,0,0,0.1); }
+        .dark .ios-switch { background: #27272A; box-shadow: inset 0 1px 3px rgba(0,0,0,0.5); }
+        .ios-switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; background: white; border-radius: 50%; box-shadow: 0 2px 5px rgba(0,0,0,0.2); transition: transform 0.3s cubic-bezier(0.16,1,0.3,1); }
+        .ios-switch:checked { background: #10B981; }
+        .ios-switch:checked::after { transform: translateX(20px); }
+        
+        .pb-safe { padding-bottom: env(safe-area-inset-bottom, 20px); }
+        
+        .animate-pop { transform: scale(1.25); background-color: #4F46E5 !important; border-color: #4F46E5 !important; }
+        .dark .animate-pop { background-color: #FFFFFF !important; border-color: #FFFFFF !important; box-shadow: 0 0 15px rgba(255,255,255,0.5); }
+    </style>
+</head>
+<body class="text-gray-900 dark:text-white transition-colors duration-300">
+
+    <div class="app-container">
+        
+        <!-- AUTH VIEW (Absolute Overlay) -->
+        <div id="view-auth" class="absolute inset-0 z-50 overflow-y-auto bg-[#F8FAFC] dark:bg-[#09090B] transition-transform duration-500">
+            <div class="min-h-[100dvh] w-full flex flex-col justify-center px-8 py-10">
+                <input type="password" id="hiddenAuthFocus" class="opacity-0 absolute -top-[1000px]">
+                
+                <div class="text-center mb-8 shrink-0">
+                    <div class="w-20 h-20 bg-brand-50 dark:bg-brand-900/30 text-brand-500 rounded-2xl flex items-center justify-center text-4xl mx-auto mb-6 shadow-sm border border-brand-100 dark:border-brand-500/20">
+                        <i class="fa-solid fa-cash-register"></i>
+                    </div>
+                    <h1 class="text-3xl font-extrabold tracking-tight">Merchant POS</h1>
+                </div>
+                
+                <div class="glass-panel p-8 rounded-3xl shrink-0 shadow-sm relative overflow-hidden">
+                    <div class="flex justify-around mb-8 border-b border-gray-200 dark:border-gray-800 relative w-full mx-auto">
+                        <div id="authIndicator" class="absolute bottom-0 left-0 h-0.5 bg-brand-500 transition-transform duration-300 w-1/2 rounded-t-md"></div>
+                        <button onclick="toggleAuthMode('login')" id="tabLogin" class="pb-3 flex-1 font-bold text-[14px] text-brand-500 transition-colors">Login</button>
+                        <button onclick="toggleAuthMode('register')" id="tabRegister" class="pb-3 flex-1 font-bold text-[14px] text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors">Register</button>
+                    </div>
+
+                    <!-- LOGIN SECTION -->
+                    <div id="loginSection" class="transition-opacity duration-300">
+                        <div class="mb-6">
+                            <label class="block text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 ml-1">Registered Mobile</label>
+                            <div class="flex items-center bg-white/50 dark:bg-black/40 border border-gray-200 dark:border-gray-800 rounded-2xl px-4 py-2 focus-within:border-brand-500 focus-within:shadow-md transition-all shadow-inner">
+                                <span class="text-gray-500 font-bold border-r border-gray-200 dark:border-gray-800 pr-3 py-1.5">+91</span>
+                                <input type="tel" id="loginMobile" placeholder="99999 99999" class="w-full bg-transparent outline-none font-bold text-gray-900 dark:text-white pl-3 text-[15px] py-1.5" maxlength="10">
+                            </div>
+                        </div>
+                        
+                        <p class="text-center text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-4">Enter 4-Digit PIN</p>
+                        <div class="flex gap-4 justify-center mb-6" id="pinDots">
+                            <div class="w-4 h-4 rounded-full bg-gray-200 dark:bg-gray-800 transition-all duration-300"></div>
+                            <div class="w-4 h-4 rounded-full bg-gray-200 dark:bg-gray-800 transition-all duration-300"></div>
+                            <div class="w-4 h-4 rounded-full bg-gray-200 dark:bg-gray-800 transition-all duration-300"></div>
+                            <div class="w-4 h-4 rounded-full bg-gray-200 dark:bg-gray-800 transition-all duration-300"></div>
+                        </div>
+                        
+                        <div class="grid grid-cols-3 gap-3">
+                            <button class="bg-white dark:bg-[#18181B] font-extrabold py-4 rounded-2xl text-2xl tactile border border-gray-100 dark:border-gray-800 shadow-sm" onclick="enterPin('1')">1</button>
+                            <button class="bg-white dark:bg-[#18181B] font-extrabold py-4 rounded-2xl text-2xl tactile border border-gray-100 dark:border-gray-800 shadow-sm" onclick="enterPin('2')">2</button>
+                            <button class="bg-white dark:bg-[#18181B] font-extrabold py-4 rounded-2xl text-2xl tactile border border-gray-100 dark:border-gray-800 shadow-sm" onclick="enterPin('3')">3</button>
+                            <button class="bg-white dark:bg-[#18181B] font-extrabold py-4 rounded-2xl text-2xl tactile border border-gray-100 dark:border-gray-800 shadow-sm" onclick="enterPin('4')">4</button>
+                            <button class="bg-white dark:bg-[#18181B] font-extrabold py-4 rounded-2xl text-2xl tactile border border-gray-100 dark:border-gray-800 shadow-sm" onclick="enterPin('5')">5</button>
+                            <button class="bg-white dark:bg-[#18181B] font-extrabold py-4 rounded-2xl text-2xl tactile border border-gray-100 dark:border-gray-800 shadow-sm" onclick="enterPin('6')">6</button>
+                            <button class="bg-white dark:bg-[#18181B] font-extrabold py-4 rounded-2xl text-2xl tactile border border-gray-100 dark:border-gray-800 shadow-sm" onclick="enterPin('7')">7</button>
+                            <button class="bg-white dark:bg-[#18181B] font-extrabold py-4 rounded-2xl text-2xl tactile border border-gray-100 dark:border-gray-800 shadow-sm" onclick="enterPin('8')">8</button>
+                            <button class="bg-white dark:bg-[#18181B] font-extrabold py-4 rounded-2xl text-2xl tactile border border-gray-100 dark:border-gray-800 shadow-sm" onclick="enterPin('9')">9</button>
+                            <div></div>
+                            <button class="bg-white dark:bg-[#18181B] font-extrabold py-4 rounded-2xl text-2xl tactile border border-gray-100 dark:border-gray-800 shadow-sm" onclick="enterPin('0')">0</button>
+                            <div class="flex items-center justify-center">
+                                <button class="w-full h-full bg-transparent font-black py-4 rounded-2xl text-2xl tactile" onclick="removePin()"><i class="fa-solid fa-delete-left text-gray-400"></i></button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- REGISTER SECTION -->
+                    <div id="registerSection" class="hidden transition-opacity duration-300 opacity-0">
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 ml-1">Shop Name</label>
+                                <div class="flex items-center bg-white/50 dark:bg-black/40 border border-gray-200 dark:border-gray-800 rounded-2xl px-4 py-2 focus-within:border-brand-500 shadow-inner">
+                                    <i class="fa-solid fa-store text-gray-400 mr-3"></i>
+                                    <input type="text" id="regShopName" placeholder="e.g. Campus Prints" class="w-full bg-transparent outline-none font-bold text-gray-900 dark:text-white text-[15px] py-1.5">
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 ml-1">Mobile Number</label>
+                                <div class="flex items-center bg-white/50 dark:bg-black/40 border border-gray-200 dark:border-gray-800 rounded-2xl px-4 py-2 focus-within:border-brand-500 shadow-inner">
+                                    <span class="text-gray-500 font-bold border-r border-gray-200 dark:border-gray-800 pr-3 py-1.5">+91</span>
+                                    <input type="tel" id="regMobile" placeholder="99999 99999" class="w-full bg-transparent outline-none font-bold text-gray-900 dark:text-white pl-3 text-[15px] py-1.5" maxlength="10">
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 ml-1">Business UPI ID</label>
+                                <div class="flex items-center bg-white/50 dark:bg-black/40 border border-gray-200 dark:border-gray-800 rounded-2xl px-4 py-2 focus-within:border-brand-500 shadow-inner">
+                                    <i class="fa-brands fa-google-pay text-gray-400 mr-3 text-lg"></i>
+                                    <input type="text" id="regUpi" placeholder="shop@ybl" class="w-full bg-transparent outline-none font-bold text-gray-900 dark:text-white text-[15px] py-1.5">
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 ml-1">Set 4-Digit PIN</label>
+                                <div class="flex items-center bg-white/50 dark:bg-black/40 border border-gray-200 dark:border-gray-800 rounded-2xl px-4 py-2 focus-within:border-brand-500 shadow-inner">
+                                    <i class="fa-solid fa-lock text-gray-400 mr-3"></i>
+                                    <input type="password" id="regPin" placeholder="••••" class="w-full bg-transparent outline-none font-black tracking-[0.5em] text-gray-900 dark:text-white text-[18px] py-1.5" maxlength="4">
+                                </div>
+                            </div>
+                        </div>
+                        <button onclick="registerMerchant()" id="regBtn" class="w-full mt-6 bg-brand-500 text-white font-bold py-4 rounded-2xl tactile text-[15px] shadow-lg shadow-brand-500/30 hover:bg-brand-600 transition-colors">Complete Registration</button>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+
+        <!-- HEADER -->
+        <header id="app-header" class="glass-header px-5 py-4 sticky top-0 z-40 flex items-center justify-between transition-colors duration-300 shrink-0 hidden">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-brand-50 dark:bg-brand-900/30 text-brand-500 rounded-xl flex items-center justify-center border border-brand-100 dark:border-brand-500/20"><i class="fa-solid fa-store"></i></div>
+                <div class="min-w-0">
+                    <h1 class="text-[16px] font-extrabold tracking-tight leading-none truncate shopNameDisplay">Loading...</h1>
+                    <p class="text-[10px] font-bold text-gray-500 mt-1 uppercase tracking-widest truncate" id="headerShopId">ID: --</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+                <span class="text-[11px] font-bold text-green-500 uppercase tracking-widest" id="shopStatusText">OPEN</span>
+                <input type="checkbox" id="shopStatusToggle" checked onchange="toggleShopStatus()" class="ios-switch shrink-0"/>
+            </div>
+        </header>
+
+        <!-- DASHBOARD (QUEUE) -->
+        <main id="tab-dashboard" class="tab-content px-4 pt-4">
+            <div class="grid grid-cols-2 gap-3 mb-4 shrink-0">
+                <div class="glass-panel rounded-3xl p-5 shadow-sm">
+                    <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Queue</p>
+                    <p class="text-4xl font-black tracking-tighter text-gray-900 dark:text-white transition-transform" id="queueCount">0</p>
+                </div>
+                <div class="bg-gray-900 dark:bg-white rounded-3xl p-5 text-white dark:text-black shadow-lg relative group">
+                    <div class="flex justify-between items-center mb-1">
+                        <p class="text-[10px] font-bold opacity-70 uppercase tracking-widest">Earnings</p>
+                        <button onclick="toggleRevenue()" class="opacity-50 hover:opacity-100 transition-opacity tactile"><i id="revenueEyeIcon" class="fa-solid fa-eye-slash text-[12px]"></i></button>
+                    </div>
+                    <p class="text-4xl font-black tracking-tighter" id="todayEarnings">₹0</p>
+                </div>
+            </div>
+
+            <div class="flex justify-between items-center mb-3 shrink-0">
+                <h2 class="text-[16px] font-extrabold tracking-tight text-gray-900 dark:text-white">Active Orders</h2>
+            </div>
+
+            <div id="ordersList" class="flex flex-col gap-3 shrink-0 pb-safe">
+                <!-- Orders injected by JS -->
+            </div>
+        </main>
+
+        <!-- STOREFRONT QR -->
+        <main id="tab-storefront" class="tab-content px-5 pt-10 items-center justify-center hidden">
+            <div class="glass-panel rounded-3xl w-full max-w-[340px] p-8 flex flex-col items-center shadow-lg relative shrink-0">
+                <h1 class="text-3xl font-black tracking-tighter mb-1 text-brand-500">Printix</h1>
+                <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-8 text-center border-b border-dashed border-gray-200 dark:border-gray-700 pb-6 w-full">Terminal QR</p>
+                
+                <div class="w-48 h-48 bg-white rounded-2xl p-2 mb-8 shrink-0 shadow-inner border border-gray-200">
+                    <img id="storeQR" src="" class="w-full h-full object-contain rounded-xl">
+                </div>
+                
+                <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">Manual Code</p>
+                <div class="bg-gray-50 dark:bg-[#18181B] px-6 py-3 rounded-xl text-3xl font-black tracking-widest border border-gray-200 dark:border-gray-800 shadow-inner text-gray-900 dark:text-white" id="storefrontIdDisplay">
+                    ------
+                </div>
+            </div>
+        </main>
+
+        <!-- PROFILE / SETTINGS -->
+        <main id="tab-profile" class="tab-content px-4 pt-6 hidden">
+            <h2 class="text-[24px] font-extrabold tracking-tight mb-6 shrink-0 text-gray-900 dark:text-white">Settings</h2>
+
+            <div class="glass-panel rounded-3xl mb-5 overflow-hidden shadow-sm shrink-0">
+                <div class="px-5 py-4 border-b border-gray-200/50 dark:border-gray-800/50 bg-gray-50/50 dark:bg-black/20 flex justify-between items-center">
+                    <h3 class="font-bold text-[14px] flex items-center gap-2 text-gray-900 dark:text-white"><i class="fa-solid fa-store text-brand-500"></i> Store Details</h3>
+                </div>
+                <div class="p-5 space-y-4">
+                    <div>
+                        <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">Shop Name</p>
+                        <input type="text" id="shopNameInput" class="w-full bg-white dark:bg-[#18181B] font-bold rounded-xl p-3 outline-none border border-gray-200 dark:border-gray-800 shadow-inner text-gray-900 dark:text-white focus:border-brand-500 transition-colors" onblur="updateShopSettings()">
+                    </div>
+                    <div>
+                        <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">UPI ID</p>
+                        <div class="relative">
+                            <i class="fa-brands fa-google-pay absolute left-3 top-3.5 text-gray-400 text-lg"></i>
+                            <input type="text" id="shopUpiInput" class="w-full bg-white dark:bg-[#18181B] font-bold rounded-xl p-3 pl-10 outline-none border border-gray-200 dark:border-gray-800 shadow-inner text-gray-900 dark:text-white focus:border-brand-500 transition-colors" onblur="updateShopSettings()">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="glass-panel rounded-3xl p-5 mb-6 shadow-sm shrink-0">
+                <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">System Theme</p>
+                <div class="flex bg-gray-50/50 dark:bg-black/20 p-1 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-inner">
+                    <button onclick="setTheme('light')" id="theme-light" class="theme-btn flex-1 py-3 text-[13px] font-bold rounded-xl text-gray-500 tactile">Light</button>
+                    <button onclick="setTheme('dark')" id="theme-dark" class="theme-btn flex-1 py-3 text-[13px] font-bold rounded-xl text-gray-500 tactile">Dark</button>
+                    <button onclick="setTheme('system')" id="theme-system" class="theme-btn flex-1 py-3 text-[13px] font-bold rounded-xl bg-white dark:bg-[#18181B] shadow-sm text-gray-900 dark:text-white tactile">Auto</button>
+                </div>
+            </div>
+
+            <button onclick="logoutMerchant()" class="w-full glass-panel rounded-2xl p-4 flex items-center justify-center gap-2 tactile hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors border-red-100 dark:border-red-900/30 shadow-sm shrink-0">
+                <i class="fa-solid fa-arrow-right-from-bracket text-red-500 text-sm"></i>
+                <span class="font-bold text-[14px] text-red-500">Secure Log Out</span>
+            </button>
+        </main>
+
+        <!-- ORDER MODAL -->
+        <div id="orderModal" class="absolute inset-0 bg-black/40 dark:bg-black/80 backdrop-blur-sm z-50 hidden flex-col justify-end transition-opacity duration-300 opacity-0 overflow-hidden">
+            <div class="flex-1" onclick="closeModal()"></div>
+            <div class="glass-panel border-t border-gray-200 dark:border-gray-800 rounded-t-[32px] p-6 transform transition-transform duration-500 translate-y-full shadow-2xl max-h-[80vh] overflow-y-auto" id="orderModalContent">
+                <div class="w-12 h-1.5 bg-gray-300 dark:bg-gray-700 rounded-full mx-auto mb-6 shrink-0"></div>
+                
+                <div class="flex justify-between items-start mb-6 shrink-0">
+                    <div><p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Token</p><h2 class="text-4xl font-black tracking-tighter text-gray-900 dark:text-white" id="modalToken">#0000</h2></div>
+                    <div class="text-right">
+                        <p class="text-2xl font-black tracking-tighter text-gray-900 dark:text-white" id="modalTotal">₹0</p>
+                        <span id="modalStatusBadge" class="text-[10px] font-bold px-2 py-0.5 rounded border uppercase tracking-widest mt-1 inline-block">New</span>
+                    </div>
+                </div>
+
+                <div class="bg-gray-50 dark:bg-[#18181B] rounded-2xl p-4 mb-6 shrink-0 flex items-center gap-4 border border-gray-200 dark:border-gray-800 shadow-inner">
+                    <div class="w-12 h-14 bg-white dark:bg-gray-900 rounded-lg flex items-center justify-center text-red-500 text-2xl shadow-sm border border-gray-200 dark:border-gray-700 shrink-0"><i class="fa-solid fa-file-pdf"></i></div>
+                    <div class="min-w-0">
+                        <p class="font-bold text-[14px] truncate mb-1 text-gray-900 dark:text-white" id="modalFile">doc.pdf</p>
+                        <p class="text-[12px] font-medium text-gray-500" id="modalDetails">10 Pgs • B&W</p>
+                    </div>
+                </div>
+
+                <div id="modalActions" class="shrink-0 space-y-3 pb-safe"></div>
+            </div>
+        </div>
+
+        <!-- NAV DOCK -->
+        <nav id="bottomNav" class="absolute bottom-6 left-1/2 transform -translate-x-1/2 w-[90%] max-w-[320px] bg-white/90 dark:bg-[#18181B]/90 backdrop-blur-xl border border-white/50 dark:border-gray-800 shadow-[0_10px_40px_rgba(0,0,0,0.1)] dark:shadow-[0_10px_40px_rgba(0,0,0,0.5)] rounded-full p-1.5 flex justify-between z-40 transition-all duration-300 hidden">
+            <button onclick="switchTab('dashboard')" id="nav-dashboard" class="flex-1 flex flex-col items-center gap-1 text-brand-500 tactile"><i class="fa-solid fa-list-check text-xl"></i><span class="text-[10px] font-bold">Queue</span></button>
+            <button onclick="switchTab('storefront')" id="nav-storefront" class="flex-1 flex flex-col items-center gap-1 text-gray-400 dark:text-gray-500 tactile"><i class="fa-solid fa-qrcode text-xl"></i><span class="text-[10px] font-bold">QR</span></button>
+            <button onclick="switchTab('profile')" id="nav-profile" class="flex-1 flex flex-col items-center gap-1 text-gray-400 dark:text-gray-500 tactile"><i class="fa-solid fa-gear text-xl"></i><span class="text-[10px] font-bold">Settings</span></button>
+        </nav>
+        
+        <div id="toast" class="absolute top-20 left-1/2 transform -translate-x-1/2 bg-gray-900 dark:bg-white text-white dark:text-black px-5 py-3 rounded-full shadow-xl text-[13px] font-bold transition-all duration-300 opacity-0 translate-y-[-20px] pointer-events-none z-50 whitespace-nowrap">
+            <span id="toastMsg">Action successful</span>
+        </div>
+    </div>
+
+    <script>
+        // --- PRODUCTION SUPABASE SETUP ---
+        const supabaseUrl = 'https://lgwcdvnfwvvlmevwixmcj.supabase.co';
+        const supabaseKey = 'sb_publishable_HeHVAZythRmjznjr0Cc7uw_FMLCHq2M';
+        const supabaseClient = supabase.createClient(supabaseUrl, supabaseKey);
+
+        let pinChars = 0;
+        let enteredPin = "";
+        let authMode = 'login'; 
+        let orders = [];
+        let selectedId = null;
+        let isShopOpen = true;
+        let isRevenueHidden = false;
+        let currentTotalEarnings = 0;
+        let realTimeSubscription = null;
+        let currentMerchant = null;
+
+        window.onload = () => { 
+            updateThemeButtons(localStorage.getItem('printix-merchant-theme') || 'system'); 
+            
+            // Check if already logged in via localStorage
+            const saved = localStorage.getItem('printix_merchant');
+            if(saved) {
+                currentMerchant = JSON.parse(saved);
+                unlockDashboard();
+            } else {
+                // Focus hidden input for physical keyboard support
+                setTimeout(() => {
+                    const hiddenInput = document.getElementById('hiddenAuthFocus');
+                    if(hiddenInput) hiddenInput.focus();
+                }, 100);
+            }
+
+            document.addEventListener('keydown', (e) => {
+                const authView = document.getElementById('view-auth');
+                if (e.target.tagName === 'INPUT' && e.target.id !== 'hiddenAuthFocus') return;
+                if(!authView.classList.contains('hidden') && authMode === 'login') {
+                    if(e.key >= '0' && e.key <= '9') enterPin(e.key); 
+                    else if (e.key === 'Backspace') removePin();
+                }
+            });
+        };
+
+        // --- AUTH & CLOUD REGISTRATION ---
+        function toggleAuthMode(mode) {
+            authMode = mode;
+            const indicator = document.getElementById('authIndicator');
+            const tabLogin = document.getElementById('tabLogin');
+            const tabRegister = document.getElementById('tabRegister');
+            const loginSec = document.getElementById('loginSection');
+            const registerSec = document.getElementById('registerSection');
+            const hiddenInput = document.getElementById('hiddenAuthFocus');
+            
+            pinChars = 0; enteredPin = "";
+            const dots = document.getElementById('pinDots').children;
+            for(let i=0; i<4; i++) dots[i].className = "w-4 h-4 rounded-full bg-gray-200 dark:bg-gray-800 transition-all duration-300 shadow-inner";
+
+            if (mode === 'login') {
+                indicator.style.transform = 'translateX(0)';
+                tabLogin.className = "pb-3 flex-1 font-bold text-[14px] text-brand-500 transition-colors";
+                tabRegister.className = "pb-3 flex-1 font-bold text-[14px] text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors";
+                
+                registerSec.classList.add('opacity-0');
+                setTimeout(() => {
+                    registerSec.classList.add('hidden');
+                    loginSec.classList.remove('hidden');
+                    setTimeout(() => loginSec.classList.remove('opacity-0'), 10);
+                }, 300);
+                if(hiddenInput) hiddenInput.focus();
+            } else {
+                indicator.style.transform = 'translateX(100%)';
+                tabRegister.className = "pb-3 flex-1 font-bold text-[14px] text-brand-500 transition-colors";
+                tabLogin.className = "pb-3 flex-1 font-bold text-[14px] text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors";
+                
+                loginSec.classList.add('opacity-0');
+                setTimeout(() => {
+                    loginSec.classList.add('hidden');
+                    registerSec.classList.remove('hidden');
+                    setTimeout(() => registerSec.classList.remove('opacity-0'), 10);
+                }, 300);
+                if(hiddenInput) hiddenInput.blur();
+            }
+        }
+
+        async function registerMerchant() {
+            const name = document.getElementById('regShopName').value.trim();
+            const mobile = document.getElementById('regMobile').value.trim();
+            const upi = document.getElementById('regUpi').value.trim();
+            const pin = document.getElementById('regPin').value.trim();
+
+            if(!name || mobile.length < 10 || !upi || pin.length < 4) {
+                showToast("Please fill all fields correctly."); return;
+            }
+            
+            const btn = document.getElementById('regBtn');
+            btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Registering...`;
+
+            // Generate unique 6 digit ID
+            const newShopId = Math.floor(100000 + Math.random() * 900000).toString();
+            
+            try {
+                // Insert into Supabase 'shops' table
+                const { error } = await supabaseClient.from('shops').insert([{
+                    id: newShopId,
+                    shop_name: name,
+                    phone: '+91' + mobile,
+                    upi_id: upi,
+                    pin: pin
+                }]);
+                
+                if(error) throw error;
+
+                currentMerchant = { id: newShopId, shopName: name, phone: '+91'+mobile, upi: upi };
+                localStorage.setItem('printix_merchant', JSON.stringify(currentMerchant));
+                
+                showToast("Registration Successful!");
+                unlockDashboard();
+                
+            } catch(e) {
+                console.error(e);
+                showToast("Failed to connect to Cloud.");
+            }
+            btn.innerHTML = `Complete Registration`;
+        }
+
+        function enterPin(key) {
+            if(authMode !== 'login') return;
+            const mobileInput = document.getElementById('loginMobile');
+            if(mobileInput && mobileInput.value.length < 10) { showToast("Enter registered 10-digit mobile number first."); mobileInput.focus(); return; }
+
+            if(pinChars < 4) {
+                const dots = document.getElementById('pinDots').children;
+                dots[pinChars].classList.add('animate-pop');
+                enteredPin += key;
+                pinChars++;
+                
+                if (pinChars === 4) verifyLogin(enteredPin);
+            }
+        }
+
+        function removePin() {
+            if(pinChars > 0) {
+                pinChars--;
+                enteredPin = enteredPin.slice(0, -1);
+                const dots = document.getElementById('pinDots').children;
+                dots[pinChars].className = "w-4 h-4 rounded-full bg-gray-200 dark:bg-gray-800 transition-all duration-300 shadow-inner";
+            }
+        }
+
+        async function verifyLogin(pin) {
+            const mobile = document.getElementById('loginMobile').value;
+            try {
+                // Check Supabase 'shops' table for match
+                const { data, error } = await supabaseClient.from('shops').select('*').eq('phone', '+91'+mobile).eq('pin', pin).single();
+                
+                if(data) {
+                    currentMerchant = { id: data.id, shopName: data.shop_name, phone: data.phone, upi: data.upi_id };
+                    localStorage.setItem('printix_merchant', JSON.stringify(currentMerchant));
+                    unlockDashboard();
+                } else {
+                    showToast("Invalid credentials");
+                    setTimeout(() => {
+                        pinChars = 0; enteredPin = "";
+                        const dots = document.getElementById('pinDots').children;
+                        for(let i=0; i<4; i++) dots[i].className = "w-4 h-4 rounded-full bg-gray-200 dark:bg-gray-800 transition-all duration-300 shadow-inner";
+                    }, 500);
+                }
+            } catch(e) {
+                showToast("Network Error.");
+            }
+        }
+
+        function unlockDashboard() {
+            // Apply Merchant Data to UI
+            document.querySelectorAll('.shopNameDisplay').forEach(el => el.innerText = currentMerchant.shopName);
+            document.getElementById('headerShopId').innerText = `ID: ${currentMerchant.id}`;
+            document.getElementById('storefrontIdDisplay').innerText = currentMerchant.id;
+            document.getElementById('shopNameInput').value = currentMerchant.shopName;
+            document.getElementById('shopUpiInput').value = currentMerchant.upi;
+            
+            // Generate UPI QR for Storefront
+            const upiUrl = `upi://pay?pa=${currentMerchant.upi}&pn=${encodeURIComponent(currentMerchant.shopName)}&cu=INR`;
+            document.getElementById('storeQR').src = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&ecc=H&data=${encodeURIComponent(upiUrl)}&color=4F46E5`;
+
+            // Transition UI
+            const authView = document.getElementById('view-auth');
+            authView.style.transform = 'translateY(100%)';
+            setTimeout(() => {
+                authView.classList.add('hidden');
+                document.getElementById('app-header').classList.remove('hidden');
+                document.getElementById('bottomNav').classList.remove('hidden');
+                switchTab('dashboard');
+                
+                fetchAndSubscribeToOrders();
+            }, 400);
+        }
+
+        function logoutMerchant() {
+            pinChars = 0; enteredPin = "";
+            const dots = document.getElementById('pinDots').children;
+            for(let i=0; i<4; i++) dots[i].className = "w-4 h-4 rounded-full bg-gray-200 dark:bg-gray-800 transition-all duration-300 shadow-inner";
+            
+            document.getElementById('loginMobile').value = '';
+            localStorage.removeItem('printix_merchant');
+            
+            if(realTimeSubscription) supabaseClient.removeChannel(realTimeSubscription);
+            
+            document.getElementById('app-header').classList.add('hidden');
+            document.getElementById('bottomNav').classList.add('hidden');
+            ['dashboard', 'qr', 'settings'].forEach(t => document.getElementById(`view-${t}`).classList.add('hidden'));
+            
+            const authView = document.getElementById('view-auth');
+            authView.classList.remove('hidden');
+            void authView.offsetWidth; 
+            authView.style.transform = 'translateY(0)';
+            
+            showToast('Logged out securely');
+        }
+
+        // --- CLOUD DB: ORDERS ENGINE ---
+        async function fetchAndSubscribeToOrders() {
+            if(!currentMerchant) return;
+            
+            const list = document.getElementById('ordersList');
+            list.innerHTML = `<div class="text-center py-20 text-gray-500 font-bold"><i class="fa-solid fa-spinner fa-spin text-2xl mb-2"></i><br>Syncing Live Queue...</div>`;
+
+            try {
+                const { data, error } = await supabaseClient
+                    .from('orders')
+                    .select('*')
+                    .eq('shop_id', currentMerchant.id)
+                    .order('created_at', { ascending: false });
+
+                if (error) throw error;
+                
+                orders = data;
+                renderOrders();
+
+                if(realTimeSubscription) supabaseClient.removeChannel(realTimeSubscription);
+                
+                realTimeSubscription = supabaseClient.channel('merchant-orders')
+                    .on('postgres_changes', { event: '*', schema: 'public', table: 'orders', filter: `shop_id=eq.${currentMerchant.id}` }, (payload) => {
+                        if (payload.eventType === 'INSERT') {
+                            orders.unshift(payload.new);
+                            renderOrders();
+                            // Visual Ping
+                            const qc = document.getElementById('queueCount');
+                            qc.style.transform = 'scale(1.3)';
+                            setTimeout(() => qc.style.transform = 'scale(1)', 300);
+                            showToast(`New Request! Token #${payload.new.token}`);
+                        } else if (payload.eventType === 'UPDATE') {
+                            const index = orders.findIndex(o => o.id === payload.new.id);
+                            if (index !== -1) {
+                                orders[index] = payload.new;
+                                renderOrders();
+                            }
+                        } else if (payload.eventType === 'DELETE') {
+                            orders = orders.filter(o => o.id !== payload.old.id);
+                            renderOrders();
+                        }
+                    })
+                    .subscribe();
+
+            } catch (error) {
+                console.error(error);
+                list.innerHTML = `<div class="text-center py-20 text-red-500 font-bold">Cloud sync error. Check connection.</div>`;
+            }
+        }
+
+        // --- Layout & UI Logic ---
+        function switchTab(tab) {
+            ['dashboard', 'storefront', 'settings'].forEach(t => {
+                const el = document.getElementById(`view-${t}`);
+                if(el) { el.classList.remove('active'); el.classList.add('hidden'); }
+                const nav = document.getElementById(`nav-${t}`);
+                if(nav) nav.className = "flex-1 flex flex-col items-center gap-1 text-gray-400 dark:text-gray-500 tactile";
+            });
+            
+            const activeTab = document.getElementById(`view-${tab}`);
+            activeTab.classList.remove('hidden');
+            setTimeout(() => activeTab.classList.add('active'), 10);
+            
+            const n = document.getElementById(`nav-${tab}`);
+            if(n) n.className = "flex-1 flex flex-col items-center gap-1 text-brand-500 tactile";
+        }
+
+        function toggleShopStatus() {
+            const text = document.getElementById('shopStatusText');
+            if (document.getElementById('shopStatusToggle').checked) {
+                text.innerText = 'OPEN'; text.className = 'text-[11px] font-bold text-green-500 uppercase tracking-widest';
+            } else {
+                text.innerText = 'CLOSED'; text.className = 'text-[11px] font-bold text-red-500 uppercase tracking-widest';
+            }
+        }
+
+        async function updateShopSettings() {
+            if(!currentMerchant) return;
+            const name = document.getElementById('shopNameInput').value || 'My Shop';
+            const upi = document.getElementById('shopUpiInput').value || 'shop@ybl';
+            
+            try {
+                // Update Supabase
+                await supabaseClient.from('shops').update({ shop_name: name, upi_id: upi }).eq('id', currentMerchant.id);
+                
+                // Update Local
+                currentMerchant.shopName = name;
+                currentMerchant.upi = upi;
+                localStorage.setItem('printix_merchant', JSON.stringify(currentMerchant));
+                
+                document.querySelectorAll('.shopNameDisplay').forEach(el => el.innerText = name);
+                
+                // Update QR
+                const upiUrl = `upi://pay?pa=${upi}&pn=${encodeURIComponent(name)}&cu=INR`;
+                document.getElementById('storeQR').src = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&ecc=H&data=${encodeURIComponent(upiUrl)}&color=4F46E5`;
+                
+                showToast('Settings saved securely');
+            } catch(e) {
+                showToast('Failed to save to cloud.');
+            }
+        }
+
+        let currentFilter = 'all';
+        function filterOrders(filter) {
+            currentFilter = filter;
+            document.querySelectorAll('#filterContainer button').forEach(btn => {
+                btn.className = "px-4 py-1.5 bg-white dark:bg-[#18181B] text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-gray-800 text-[13px] font-bold rounded-full transition-all tactile";
+            });
+            const activeBtn = document.getElementById(`filter-${filter}`);
+            activeBtn.className = "px-4 py-1.5 bg-gray-900 dark:bg-white text-white dark:text-black text-[13px] font-bold rounded-full shadow-md transition-all tactile";
+            renderOrders();
+        }
+
+        function renderOrders() {
+            const list = document.getElementById('ordersList');
+            list.innerHTML = '';
+            let active = 0, earn = 0;
+            const filteredOrders = [];
+
+            orders.forEach(o => {
+                if(o.status !== 'completed') active++;
+                if(o.status === 'ready' || o.status === 'completed') earn += o.total;
+                
+                if(o.status !== 'completed' && (currentFilter === 'all' || 
+                  (currentFilter === 'new' && (o.status === 'pending' || o.status === 'new' || o.status === 'cash_due')) || 
+                  (currentFilter === 'ready' && o.status === 'ready'))) {
+                    filteredOrders.push(o);
+                }
+            });
+
+            if(filteredOrders.length === 0) {
+                 list.innerHTML = `<div class="text-center py-10"><i class="fa-solid fa-mug-hot text-3xl text-gray-300 dark:text-gray-700 mb-2"></i><p class="text-[13px] font-bold text-gray-400">Queue is empty</p></div>`;
+            } else {
+                filteredOrders.forEach((o, index) => {
+                    let border = o.status === 'cash_due' ? 'border-orange-200 dark:border-orange-900/50' : 'border-gray-200 dark:border-gray-800 hover:border-brand-500 transition-colors';
+                    let badge = o.status === 'cash_due' ? `<span class="bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-500 text-[9px] font-bold px-2 py-0.5 rounded border border-orange-200 dark:border-orange-900/50 uppercase tracking-widest"><i class="fa-solid fa-money-bill"></i> Cash</span>` 
+                              : ((o.status === 'new' || o.status === 'pending') ? `<span class="bg-brand-50 dark:bg-brand-900/20 text-brand-600 text-[9px] font-bold px-2 py-0.5 rounded border border-brand-200 dark:border-brand-900/50 uppercase tracking-widest">New</span>` 
+                              : `<span class="bg-green-50 dark:bg-green-900/20 text-green-600 text-[9px] font-bold px-2 py-0.5 rounded border border-green-200 dark:border-green-900/50 uppercase tracking-widest">Ready</span>`);
+
+                    let chips = '';
+                    if(o.color === 'Color') chips += `<span class="bg-purple-50 dark:bg-purple-900/20 text-purple-600 text-[9px] font-bold px-1.5 py-0.5 rounded border border-purple-100 dark:border-purple-900/50"><i class="fa-solid fa-palette mr-0.5"></i>Color</span>`;
+                    else chips += `<span class="bg-gray-100 dark:bg-gray-800 text-gray-500 text-[9px] font-bold px-1.5 py-0.5 rounded border border-gray-200 dark:border-gray-700">B&W</span>`;
+                    if(o.sides === 'Double Sided') chips += `<span class="bg-gray-100 dark:bg-gray-800 text-gray-500 text-[9px] font-bold px-1.5 py-0.5 rounded border border-gray-200 dark:border-gray-700"><i class="fa-solid fa-file-export mr-0.5"></i>Double</span>`;
+                    if(o.binding === 'Spiral') chips += `<span class="bg-blue-50 dark:bg-blue-900/20 text-blue-600 text-[9px] font-bold px-1.5 py-0.5 rounded border border-blue-100 dark:border-blue-900/50"><i class="fa-solid fa-book mr-0.5"></i>Spiral</span>`;
+
+                    const delay = (index * 0.05).toFixed(2);
+                    const card = document.createElement('div');
+                    card.className = `glass-panel rounded-2xl p-4 border ${border} cursor-pointer tactile shrink-0 animate-pop min-w-0`;
+                    card.style.animationDelay = `${delay}s`;
+                    card.onclick = () => openModal(o.id);
+                    card.innerHTML = `
+                        <div class="flex justify-between items-start mb-3">
+                            <h3 class="text-2xl font-black tracking-tighter">#${o.token}</h3>
+                            ${badge}
+                        </div>
+                        <div class="flex justify-between items-end gap-2">
+                            <div class="min-w-0 flex-1"><p class="font-bold text-[14px] truncate mb-0.5">${o.file_name}</p><div class="flex gap-1 flex-wrap">${chips}</div></div>
+                            <p class="text-[16px] font-black tracking-tighter shrink-0">₹${o.total}</p>
+                        </div>
+                    `;
+                    list.appendChild(card);
+                });
+            }
+
+            document.getElementById('queueCount').innerText = active;
+            currentTotalEarnings = earn;
+            updateRevenueDisplay();
+        }
+
+        function toggleRevenue() {
+            isRevenueHidden = !isRevenueHidden;
+            document.getElementById('revenueEyeIcon').className = isRevenueHidden ? "fa-solid fa-eye text-[12px]" : "fa-solid fa-eye-slash text-[12px]";
+            updateRevenueDisplay();
+        }
+        function updateRevenueDisplay() {
+            const el = document.getElementById('todayEarnings');
+            el.innerText = isRevenueHidden ? "₹****" : `₹${currentTotalEarnings}`;
+        }
+
+        function openModal(id) {
+            const o = orders.find(x => x.id === id);
+            selectedId = id;
+            document.getElementById('modalToken').innerText = `#${o.token}`;
+            document.getElementById('modalTotal').innerText = `₹${o.total}`;
+            document.getElementById('modalFile').innerText = o.file_name;
+            document.getElementById('modalDetails').innerText = `${o.pages} Pgs • ${o.copies} Copies`;
+            document.getElementById('modalReqColor').innerText = o.color;
+            document.getElementById('modalReqSides').innerText = o.sides;
+            document.getElementById('modalReqBinding').innerText = o.binding;
+            document.getElementById('modalReqMethod').innerText = o.method === 'cash' ? "Cash Pending" : "UPI Paid";
+            document.getElementById('modalReqMethod').className = o.method === 'cash' ? "font-bold text-[14px] text-orange-500" : "font-bold text-[14px] text-green-500";
+
+            const badge = document.getElementById('modalStatusBadge');
+            const acts = document.getElementById('modalActions');
+
+            if(o.status === 'cash_due') {
+                badge.className = "bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-500 text-[10px] font-bold px-2 py-0.5 rounded border border-orange-200 dark:border-orange-900/50 uppercase tracking-widest mt-1 inline-block";
+                badge.innerText = "Collect Cash";
+                acts.innerHTML = `<button onclick="updateStatusCloud('ready')" class="w-full bg-orange-500 text-white font-bold py-4 rounded-2xl tactile text-[15px] shadow-sm flex items-center justify-center gap-2"><i class="fa-solid fa-money-bill"></i> Cash Collected & Printed</button>`;
+            } else if (o.status === 'new' || o.status === 'pending') {
+                badge.className = "bg-brand-50 dark:bg-brand-900/20 text-brand-600 text-[10px] font-bold px-2 py-0.5 rounded border border-brand-200 dark:border-brand-900/50 uppercase tracking-widest mt-1 inline-block";
+                badge.innerText = "UPI Verified";
+                acts.innerHTML = `<button onclick="updateStatusCloud('ready')" class="w-full bg-brand-500 text-white font-bold py-4 rounded-2xl tactile text-[15px] shadow-sm flex items-center justify-center gap-2"><i class="fa-solid fa-check-double"></i> Mark as Printed</button>`;
+            } else {
+                badge.className = "bg-green-50 dark:bg-green-900/20 text-green-600 text-[10px] font-bold px-2 py-0.5 rounded border border-green-200 dark:border-green-900/50 uppercase tracking-widest mt-1 inline-block";
+                badge.innerText = "Ready";
+                acts.innerHTML = `<button onclick="updateStatusCloud('completed')" class="w-full bg-green-500 text-white font-bold py-4 rounded-2xl tactile text-[15px] shadow-sm flex items-center justify-center gap-2"><i class="fa-solid fa-handshake"></i> Handover Complete</button>`;
+            }
+
+            const modal = document.getElementById('orderModal');
+            const content = document.getElementById('orderModalContent');
+            modal.classList.remove('hidden'); modal.classList.add('flex');
+            setTimeout(() => { modal.classList.remove('opacity-0'); content.classList.remove('translate-y-full'); }, 10);
+        }
+
+        function closeModal() {
+            const modal = document.getElementById('orderModal');
+            const content = document.getElementById('orderModalContent');
+            modal.classList.add('opacity-0'); content.classList.add('translate-y-full');
+            setTimeout(() => { modal.classList.add('hidden'); modal.classList.remove('flex'); }, 300);
+        }
+
+        async function updateStatusCloud(newStatus) {
+            try {
+                const { error } = await supabaseClient.from('orders').update({ status: newStatus }).eq('id', selectedId);
+                if (error) throw error;
+                closeModal(); 
+                if(newStatus === 'completed') showToast("Order Archived successfully.");
+            } catch (e) {
+                showToast("Failed to update status in cloud.");
+            }
+        }
+
+        function setTheme(mode) {
+            localStorage.setItem('printix-merchant-theme', mode);
+            if (mode === 'dark' || (mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                document.documentElement.classList.add('dark');
+            } else { document.documentElement.classList.remove('dark'); }
+            updateThemeButtons(mode);
+        }
+
+        function updateThemeButtons(mode) {
+            ['light', 'dark', 'system'].forEach(t => { document.getElementById(`theme-${t}`).className = "theme-btn flex-1 py-3 text-[13px] font-bold rounded-xl text-gray-500 tactile"; });
+            const active = document.getElementById(`theme-${mode}`);
+            if(active) active.className = "theme-btn flex-1 py-3 text-[13px] font-bold rounded-xl bg-white dark:bg-[#18181B] shadow-sm text-gray-900 dark:text-white tactile";
+        }
+
+        function showToast(msg) {
+            const t = document.getElementById('toast');
+            document.getElementById('toastMsg').innerText = msg;
+            t.classList.remove('opacity-0', 'translate-y-[-20px]');
+            setTimeout(() => t.classList.add('opacity-0', 'translate-y-[-20px]'), 3000);
+        }
+    </script>
+</body>
+</html>
